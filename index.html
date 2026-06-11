@@ -1092,6 +1092,12 @@ async function closePanel() {
 
 function addQuick(qr, label) {
   if (S.parts.find(p=>p.qr===qr)) { toast('Already added', ''); closePanel(); return; }
+  const parsed = parseQR(qr);
+  if (parsed.type === 'bulk') {
+    closePanel();
+    setTimeout(() => openBulkModal(parsed), 100);
+    return;
+  }
   S.parts.push({ qr, label, time: TS() });
   closePanel(); renderParts();
   toast('<i class="ti ti-check"></i> Part added', 'ok');
