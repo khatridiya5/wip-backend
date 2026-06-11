@@ -1174,7 +1174,7 @@ function openBulkModal(parsed) {
   pendingBulk = parsed;
   const overlay = document.createElement('div');
   overlay.id = 'bulk-overlay';
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:200;display:flex;align-items:flex-end;justify-content:center';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:flex-end;justify-content:center';
   overlay.innerHTML = `
     <div style="background:var(--navy2);border-radius:20px 20px 0 0;padding:24px 20px 36px;width:100%;max-width:430px">
       <div style="width:36px;height:4px;border-radius:2px;background:var(--navy3);margin:0 auto 20px"></div>
