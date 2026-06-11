@@ -904,35 +904,8 @@ function pausePartCam() {
 
 function parseQR(raw) {
   raw = raw.trim();
-  if (raw.startsWith('BULK-')) {
-    const parts = raw.split('-');
-    const itemId = parts[1] || raw;
-    const batchId = parts.slice(2).join('-') || '';
-    const label = itemId.charAt(0).toUpperCase() + itemId.slice(1).toLowerCase();
-    return { type: 'bulk', qr: raw, itemId, batchId, label, unit: 'pcs' };
-  }
-  if (raw.startsWith('UNIT-')) {
-    const parts = raw.split('-');
-    const itemId = parts[1] || raw;
-    const serial = parts.slice(2).join('-') || '';
-    const label = itemId.charAt(0).toUpperCase() + itemId.slice(1).toLowerCase();
-    return { type: 'unit', qr: raw, itemId, serial, label };
-  }
-  // Handle SIDERS format: PRD-{order_id}-{item_id}-{serial}
-  if (raw.startsWith('PRD-')) {
-    const parts = raw.split('-');
-    const itemId = parts[2] || raw;
-    const serial = parts[3] || '';
-    const label = 'Item-' + itemId;
-    return { type: 'unit', qr: raw, itemId, serial, label };
-  }
-  // Handle WK- worker codes scanned by mistake
-  if (raw.startsWith('WK-')) {
-    return { type: 'unknown', qr: raw, label: raw };
-  }
-  // Fallback — treat as bulk so quantity is always asked
-  const label = raw.length > 12 ? raw.slice(0, 12) + '…' : raw;
-  return { type: 'bulk', qr: raw, itemId: raw, batchId: '', label, unit: 'pcs' };
+  if (raw.startsWith('WK-')) return { type: 'unknown', qr: raw, label: raw };
+  return { type: 'bulk', qr: raw, itemId: raw, batchId: '', label: raw, unit: 'pcs' };
 }
 
 
