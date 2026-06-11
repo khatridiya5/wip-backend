@@ -891,7 +891,8 @@ async function onPartScanned(decoded) {
 
   if (parsed.type === 'bulk') {
     await stopPartCamera();
-    openBulkModal(parsed);
+    $('add-panel').classList.remove('open');
+    setTimeout(() => openBulkModal(parsed), 100);
   }
 }
 
@@ -1122,7 +1123,7 @@ function confirmPart() {
 
   if (parsed.type === 'bulk') {
     closePanel();
-    openBulkModal(parsed);
+    setTimeout(() => openBulkModal(parsed), 100);
   }
 }
 
