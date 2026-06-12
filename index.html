@@ -698,7 +698,7 @@ body::before {
       <div class="success-title">Session logged!</div>
       <div class="success-sub">WIP dashboard has been updated.</div>
       <div class="summary" id="summary"></div>
-      <button class="btn btn-blue" style="width:100%;padding:14px;font-size:15px" onclick="reset()">
+      <button class="btn btn-blue" style="width:100%;padding:14px;font-size:15px" onclick="newScan()">
         <i class="ti ti-refresh"></i> New scan
       </button>
     </div>
@@ -991,6 +991,7 @@ async function lookupWorker(override) {
     }
     const w = await res.json();
     S.worker = { qr_code_data: qr, name: w.name, department: w.department };
+    localStorage.setItem('wip_worker', JSON.stringify(S.worker));
     S.t0   = Date.now();
     S.tick = setInterval(tickSession, 1000);
     setBtn('lookup-btn', false);
@@ -1037,6 +1038,7 @@ function goToStep2() {
 }
 
 function changeWorker() {
+  localStorage.removeItem('wip_worker');
   clearInterval(S.tick);
   stopPartCamera();
   S = { worker:null, parts:[], t0:null, tick:null, workerQR:null, partQR:null, workerCamOn:false, partCamOn:false, continuous:false, activeTab:'cam' };
@@ -1310,6 +1312,39 @@ function reset() {
   $('scan-more-btn').style.display = 'none';
   $('add-first-btn').style.display = 'flex';
 }
+
+
+function newScan() {
+  S.parts = [];
+  clearInterval(S.tick);
+  S.t0 = Date.now();
+  S.tick = setInterval(tickSession, 1000);
+
+  $('scr-done').style.display  = 'none';
+  $('scr-parts').style.display = 'block';
+  $('stp2').classList.remove('done'); $('stp2').classList.add('active'); $('sn2').textContent = '2';
+  $('stp3').classList.remove('active');
+
+  renderParts();
+}
+
+
+// ─────────────────────────────────────────────────────────
+// AUTO-LOGIN ON LOAD
+// ─────────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  const saved = localStorage.getItem('wip_worker');
+  if (saved) {
+    try {
+      S.worker = JSON.parse(saved);
+      S.t0   = Date.now();
+      S.tick = setInterval(tickSession, 1000);
+      goToStep2();
+    } catch(_) { localStorage.removeItem('wip_worker'); }
+  }
+});
+
+
 </script>
 </body>
 </html>
