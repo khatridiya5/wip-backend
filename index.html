@@ -749,7 +749,8 @@ body::before {
       <select class="select-inp" id="bulk-operation-select" style="width:100%;margin-bottom:14px"></select>
 
       <div style="font-size:13px;color:var(--muted);margin-bottom:8px">Product / job</div>
-      <select class="select-inp" id="bulk-product-select" style="width:100%;margin-bottom:14px"></select>
+      <input class="inp" id="bulk-product-input" list="bulk-product-list" placeholder="Type or pick a job (e.g. JO-2291)" autocomplete="off" style="width:100%;margin-bottom:14px"/>
+      <datalist id="bulk-product-list"></datalist>
 
       <div style="font-size:13px;color:var(--muted);margin-bottom:8px">Notes <span style="opacity:.6">(optional)</span></div>
       <textarea id="bulk-notes-inp" rows="2" placeholder="e.g. 2 brackets cut, 1 reject"
@@ -1303,9 +1304,10 @@ function buildBulkOperationSelect() {
 }
 
 function buildBulkProductSelect() {
-  $('bulk-product-select').innerHTML = PRODUCTS.map(p =>
-    `<option value="${p.id}">${p.label}</option>`
+  $('bulk-product-list').innerHTML = PRODUCTS.map(p =>
+    `<option value="${p.label}"></option>`
   ).join('');
+  $('bulk-product-input').value = '';
 }
 
 function setBulkFraction(frac, el) {
@@ -1348,9 +1350,9 @@ function confirmBulk() {
   const isPipe = p.type === 'pipe';
 
   const operation = isPipe ? $('bulk-operation-select').value : null;
-  const product   = isPipe ? $('bulk-product-select').value : null;
-  const productLabel = isPipe ? (PRODUCTS.find(x => x.id === product)?.label || product) : null;
-  const notes     = isPipe ? $('bulk-notes-inp').value.trim() : '';
+  const product = isPipe ? $('bulk-product-input').value.trim() : null;
+  const productLabel = product;
+  const notes = isPipe ? $('bulk-notes-inp').value.trim() : '';
 
   const existing = S.parts.find(x => x.qr === p.qr && x.product === product && x.operation === operation);
 
