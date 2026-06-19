@@ -598,7 +598,15 @@ body::before {
 
     <div class="worker-card" id="worker-card"></div>
 
-    
+    <div class="section-row" style="margin-bottom:8px">
+      <span class="section-title">Operation</span>
+      <span class="count-pill" id="operation-auto-pill" style="display:none">
+        <i class="ti ti-bolt" style="font-size:11px;vertical-align:-1px"></i> Auto-filled
+      </span>
+    </div>
+    <select class="select-inp" id="operation-select" style="width:100%;margin-bottom:14px" onchange="onOperationChange()"></select>
+
+
 
     <!-- ── ADD PART PANEL ── -->
     <div class="add-panel" id="add-panel">
@@ -720,14 +728,35 @@ body::before {
         <div id="bulk-subtitle" style="font-size:12px;font-family:var(--mono);color:var(--muted)"></div>
       </div>
     </div>
-    <div style="font-size:13px;color:var(--muted);margin-bottom:8px">How many did you take?</div>
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
+    <div id="bulk-qty-label" style="font-size:13px;color:var(--muted);margin-bottom:8px">How much was used?</div>
+    <div style="display:flex;gap:6px;margin-bottom:10px" id="bulk-frac-row">
+      <button class="btn btn-ghost frac-btn" style="flex:1;padding:9px 0" onclick="setBulkFraction(0.25,this)">1/4</button>
+      <button class="btn btn-ghost frac-btn" style="flex:1;padding:9px 0" onclick="setBulkFraction(0.5,this)">1/2</button>
+      <button class="btn btn-ghost frac-btn" style="flex:1;padding:9px 0" onclick="setBulkFraction(0.75,this)">3/4</button>
+      <button class="btn btn-ghost frac-btn" style="flex:1;padding:9px 0" onclick="setBulkFraction(1,this)">Full</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
       <button onclick="stepQty(-1)" style="width:44px;height:44px;border-radius:10px;background:var(--surface2);border:1px solid var(--border);color:var(--text);font-size:22px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0">−</button>
-      <input id="bulk-qty-inp" type="number" min="1" value="1" inputmode="numeric"
+      <input id="bulk-qty-inp" type="number" min="0.05" step="0.05" value="1" inputmode="decimal"
         style="flex:1;text-align:center;font-size:22px;font-family:var(--mono);font-weight:500;padding:10px;background:var(--surface);border:1px solid var(--border);border-radius:10px;color:var(--text);outline:none;-webkit-appearance:none"/>
       <button onclick="stepQty(1)" style="width:44px;height:44px;border-radius:10px;background:var(--surface2);border:1px solid var(--border);color:var(--text);font-size:22px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0">+</button>
-      <span style="font-size:13px;color:var(--muted)">pcs</span>
+      <span id="bulk-qty-unit" style="font-size:13px;color:var(--muted)">pipe(s)</span>
     </div>
+    <p id="bulk-qty-hint" style="font-size:11px;color:var(--muted);margin-bottom:18px">Tap a quick fraction above, or type an exact value (e.g. 2.5 for 2½ pipes)</p>
+
+    <div id="bulk-extra-fields">
+      <div style="font-size:13px;color:var(--muted);margin-bottom:8px">Operation</div>
+      <select class="select-inp" id="bulk-operation-select" style="width:100%;margin-bottom:14px"></select>
+
+      <div style="font-size:13px;color:var(--muted);margin-bottom:8px">Product / job</div>
+      <select class="select-inp" id="bulk-product-select" style="width:100%;margin-bottom:14px"></select>
+
+      <div style="font-size:13px;color:var(--muted);margin-bottom:8px">Notes <span style="opacity:.6">(optional)</span></div>
+      <textarea id="bulk-notes-inp" rows="2" placeholder="e.g. 2 brackets cut, 1 reject"
+        style="width:100%;padding:10px 12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:13px;font-family:var(--font);resize:none;outline:none;margin-bottom:18px"></textarea>
+    </div>
+    
+
     <div style="display:flex;gap:10px">
       <button class="btn btn-ghost" style="flex:1;padding:14px" onclick="closeBulkModal()">Cancel</button>
       <button class="btn btn-blue" style="flex:1;padding:14px" onclick="confirmBulk()">
@@ -751,12 +780,25 @@ const QUICK_PARTS = [
   { qr: 'PRD-1-0002-U002', label: 'PRD-0002 · U2' },
 ];
 
+// Operations a pipe/part can be consumed for. Edit this list to match your floor.
+const OPERATIONS = ['Cutting', 'Welding', 'Assembly', 'Bending', 'Threading', 'Grinding/Finishing'];
+
+// Active jobs / products a worker can attribute usage to.
+// TODO: replace this hardcoded list with a fetch to your backend (e.g. GET /production/jobs/active)
+// so it always reflects real open job orders instead of a fixed list baked into the app.
+let PRODUCTS = [
+  { id: 'JO-2291', label: 'JO-2291 · MS Gate Frame' },
+  { id: 'JO-2298', label: 'JO-2298 · Conveyor Stand' },
+  { id: 'JO-2305', label: 'JO-2305 · Staircase Railing' },
+];
+
 // ─────────────────────────────────────────────────────────
 // STATE
 // ─────────────────────────────────────────────────────────
 let S = {
   worker:       null,
   parts:        [],
+  operation:    null,   // currently selected operation (Cutting / Welding / etc.)
   t0:           null,
   tick:         null,
   workerQR:     null,   // Html5Qrcode for worker screen
@@ -919,7 +961,7 @@ async function onPartScanned(decoded) {
     return;
   }
 
-  if (parsed.type === 'bulk') {
+  if (parsed.type === 'pipe' || parsed.type === 'bulk') {
     await stopPartCamera();
     $('add-panel').classList.remove('open');
     setTimeout(() => openBulkModal(parsed), 100);
@@ -936,7 +978,21 @@ function pausePartCam() {
 function parseQR(raw) {
   raw = raw.trim();
   if (raw.startsWith('WK-')) return { type: 'unknown', qr: raw, label: raw };
-  return { type: 'bulk', qr: raw, itemId: raw, batchId: '', label: raw, unit: 'pcs' };
+
+  // Pipes always get the full modal (qty + operation + product/job + notes),
+  // regardless of prefix.
+  const isPipe = /pipe/i.test(raw);
+  if (isPipe) {
+    return { type: 'pipe', qr: raw, itemId: raw, batchId: '', label: raw, unit: 'pcs' };
+  }
+
+  // Non-pipe batch items (e.g. nuts, bolts) still get the modal for quantity entry.
+  if (raw.startsWith('BULK-')) {
+    return { type: 'bulk', qr: raw, itemId: raw, batchId: '', label: raw, unit: 'pcs' };
+  }
+
+  // Everything else gets assigned directly, no modal.
+  return { type: 'unit', qr: raw, label: raw, serial: raw };
 }
 
 
@@ -990,7 +1046,8 @@ async function lookupWorker(override) {
       return;
     }
     const w = await res.json();
-    S.worker = { qr_code_data: qr, name: w.name, department: w.department };
+    S.worker = { qr_code_data: qr, name: w.name, department: w.department, assigned_operation: w.assigned_operation || null };
+    S.operation = w.assigned_operation || OPERATIONS[0];
     localStorage.setItem('wip_worker', JSON.stringify(S.worker));
     S.t0   = Date.now();
     S.tick = setInterval(tickSession, 1000);
@@ -1033,15 +1090,31 @@ function goToStep2() {
       <i class="ti ti-edit"></i>
     </button>`;
 
+  buildOperationSelect();
   buildChips();
   renderParts();
+}
+
+// ── OPERATION ──
+function buildOperationSelect() {
+  const sel = $('operation-select');
+  sel.innerHTML = OPERATIONS.map(op =>
+    `<option value="${op}" ${op === S.operation ? 'selected' : ''}>${op}</option>`
+  ).join('');
+  $('operation-auto-pill').style.display = S.worker.assigned_operation ? 'inline-flex' : 'none';
+}
+
+function onOperationChange() {
+  S.operation = $('operation-select').value;
+  // once the worker overrides it, it's no longer "auto" for this session
+  $('operation-auto-pill').style.display = 'none';
 }
 
 function changeWorker() {
   localStorage.removeItem('wip_worker');
   clearInterval(S.tick);
   stopPartCamera();
-  S = { worker:null, parts:[], t0:null, tick:null, workerQR:null, partQR:null, workerCamOn:false, partCamOn:false, continuous:false, activeTab:'cam' };
+  S = { worker:null, parts:[], operation:null, t0:null, tick:null, workerQR:null, partQR:null, workerCamOn:false, partCamOn:false, continuous:false, activeTab:'cam' };
   $('scr-parts').style.display  = 'none';
   $('scr-worker').style.display = 'block';
   $('stp1').classList.add('active'); $('stp1').classList.remove('done'); $('sn1').textContent = '1';
@@ -1112,12 +1185,12 @@ async function closePanel() {
 function addQuick(qr, label) {
   if (S.parts.find(p=>p.qr===qr)) { toast('Already added', ''); closePanel(); return; }
   const parsed = parseQR(qr);
-  if (parsed.type === 'bulk') {
+  if (parsed.type === 'pipe' || parsed.type === 'bulk') {
     closePanel();
     setTimeout(() => openBulkModal(parsed), 100);
     return;
   }
-  S.parts.push({ qr, label, time: TS() });
+  S.parts.push({ ...parsed, qr, label, time: TS() });
   closePanel(); renderParts();
   toast('<i class="ti ti-check"></i> Part added', 'ok');
 }
@@ -1146,7 +1219,7 @@ function confirmPart() {
     return;
   }
 
-  if (parsed.type === 'bulk') {
+  if (parsed.type === 'pipe' || parsed.type === 'bulk') {
     closePanel();
     setTimeout(() => openBulkModal(parsed), 100);
   }
@@ -1173,19 +1246,23 @@ function renderParts() {
     return;
   }
   list.innerHTML = S.parts.map(p => {
-    const isBulk = p.type === 'bulk';
+    const isBulk = p.type === 'pipe' || p.type === 'bulk';
     const iconStyle = isBulk
       ? 'background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.2);color:var(--amber)'
       : 'background:rgba(74,222,128,0.1);border:1px solid rgba(74,222,128,0.2);color:var(--green)';
     const icon = isBulk ? 'ti-packages' : 'ti-components';
     const qtyBadge = isBulk
-      ? `<span style="font-family:var(--mono);font-size:11px;background:rgba(251,191,36,0.15);color:var(--amber);border:1px solid rgba(251,191,36,0.2);padding:1px 7px;border-radius:8px">× ${p.qty} pcs</span>`
+      ? `<span style="font-family:var(--mono);font-size:11px;background:rgba(251,191,36,0.15);color:var(--amber);border:1px solid rgba(251,191,36,0.2);padding:1px 7px;border-radius:8px">× ${p.qty}</span>`
       : `<span style="font-family:var(--mono);font-size:11px;color:var(--green)">#${p.serial}</span>`;
+    const tagLine = (p.operation || p.productLabel)
+      ? `<div class="part-meta" style="color:var(--cyan);margin-top:2px">${p.operation || ''}${p.operation && p.productLabel ? ' · ' : ''}${p.productLabel || ''}</div>`
+      : '';
     return `<div class="part-item">
       <div class="part-icon" style="${iconStyle}"><i class="ti ${icon}"></i></div>
       <div class="part-info">
         <div class="part-name" style="display:flex;align-items:center;gap:6px">${p.label} ${qtyBadge}</div>
         <div class="part-meta">${p.qr} · ${p.time}</div>
+        ${tagLine}
       </div>
       <button class="part-del" onclick="removePart('${p.qr}')"><i class="ti ti-trash"></i></button>
     </div>`;
@@ -1197,17 +1274,64 @@ let pendingBulk = null;
 
 function openBulkModal(parsed) {
   pendingBulk = parsed;
-  $('bulk-title').textContent = parsed.label + ' (Batch ' + parsed.batchId + ')';
+  const isPipe = parsed.type === 'pipe';
+
+  $('bulk-title').textContent = parsed.batchId ? parsed.label + ' (Batch ' + parsed.batchId + ')' : parsed.label;
   $('bulk-subtitle').textContent = parsed.qr;
   $('bulk-qty-inp').value = 1;
+  $('bulk-notes-inp').value = '';
+  clearFractionHighlight();
+  buildBulkOperationSelect();
+  buildBulkProductSelect();
+
+  $('bulk-extra-fields').style.display = isPipe ? 'block' : 'none';
+  $('bulk-frac-row').style.display = isPipe ? 'flex' : 'none';
+  $('bulk-qty-label').textContent = isPipe ? 'How much was used?' : 'How much are you taking?';
+  $('bulk-qty-unit').textContent = isPipe ? 'pipe(s)' : 'unit(s)';
+  $('bulk-qty-hint').textContent = isPipe
+    ? 'Tap a quick fraction above, or type an exact value (e.g. 2.5 for 2½ pipes)'
+    : 'This quantity will be deducted from store stock';
+
   $('bulk-overlay').style.display = 'flex';
   setTimeout(() => $('bulk-qty-inp').focus(), 300);
 }
 
+function buildBulkOperationSelect() {
+  $('bulk-operation-select').innerHTML = OPERATIONS.map(op =>
+    `<option value="${op}" ${op === S.operation ? 'selected' : ''}>${op}</option>`
+  ).join('');
+}
+
+function buildBulkProductSelect() {
+  $('bulk-product-select').innerHTML = PRODUCTS.map(p =>
+    `<option value="${p.id}">${p.label}</option>`
+  ).join('');
+}
+
+function setBulkFraction(frac, el) {
+  $('bulk-qty-inp').value = frac;
+  clearFractionHighlight();
+  el.style.background = 'rgba(59,130,246,0.15)';
+  el.style.borderColor = 'var(--blue)';
+  el.style.color = 'var(--blue)';
+}
+
+function clearFractionHighlight() {
+  document.querySelectorAll('.frac-btn').forEach(b => {
+    b.style.background = '';
+    b.style.borderColor = '';
+    b.style.color = '';
+  });
+}
 
 function stepQty(delta) {
   const el = document.getElementById('bulk-qty-inp');
-  el.value = Math.max(1, (parseInt(el.value) || 0) + delta);
+  const cur = parseFloat(el.value) || 0;
+  const inc = cur < 1 ? 0.25 : 1;   // fine steps below 1 pipe, whole steps above
+  let next = Math.round((cur + delta * inc) * 100) / 100;
+  if (next < 0.05) next = 0.05;
+  el.value = next;
+  clearFractionHighlight();
 }
 
 function closeBulkModal() {
@@ -1217,17 +1341,27 @@ function closeBulkModal() {
 }
 
 function confirmBulk() {
-  const qty = parseInt(document.getElementById('bulk-qty-inp').value) || 0;
-  if (qty < 1) { toast('Enter quantity ≥ 1', 'err'); return; }
+  const qty = parseFloat(document.getElementById('bulk-qty-inp').value) || 0;
+  if (qty <= 0) { toast('Enter a quantity greater than 0', 'err'); return; }
+
   const p = pendingBulk;
-  const existing = S.parts.find(x => x.qr === p.qr);
+  const isPipe = p.type === 'pipe';
+
+  const operation = isPipe ? $('bulk-operation-select').value : null;
+  const product   = isPipe ? $('bulk-product-select').value : null;
+  const productLabel = isPipe ? (PRODUCTS.find(x => x.id === product)?.label || product) : null;
+  const notes     = isPipe ? $('bulk-notes-inp').value.trim() : '';
+
+  const existing = S.parts.find(x => x.qr === p.qr && x.product === product && x.operation === operation);
+
   if (existing) {
     existing.qty += qty;
     existing.time = TS();
+    if (notes) existing.notes = existing.notes ? existing.notes + ' | ' + notes : notes;
     toast('<i class="ti ti-plus"></i> +' + qty + ' added — total ' + existing.qty, 'ok');
   } else {
-    S.parts.push({ ...p, qty, time: TS() });
-    toast('<i class="ti ti-check"></i> ' + p.label + ' × ' + qty + ' added', 'ok');
+    S.parts.push({ ...p, qty, time: TS(), operation, product, productLabel, notes });
+    toast('<i class="ti ti-check"></i> ' + p.label + ' added', 'ok');
   }
   closeBulkModal();
   renderParts();
@@ -1249,10 +1383,13 @@ async function submitSession() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          worker_qr:  w.qr_code_data,
-          part_qr:    part.qr,
-          quantity:   part.qty || 1,
-          workstation: null
+          worker_qr:    w.qr_code_data,
+          part_qr:      part.qr,
+          quantity:     part.qty || 1,
+          operation:    part.operation || S.operation || null,
+          product_code: part.product || null,
+          notes:        part.notes || null,
+          workstation:  null
         })
       });
       if (!res.ok) {
@@ -1293,7 +1430,7 @@ function reset() {
   clearInterval(S.tick);
   stopPartCamera();
   stopWorkerCamera();
-  S = { worker:null, parts:[], t0:null, tick:null, workerQR:null, partQR:null, workerCamOn:false, partCamOn:false, continuous:false, activeTab:'cam' };
+  S = { worker:null, parts:[], operation:null, t0:null, tick:null, workerQR:null, partQR:null, workerCamOn:false, partCamOn:false, continuous:false, activeTab:'cam' };
 
   $('scr-done').style.display   = 'none';
   $('scr-worker').style.display = 'block';
@@ -1337,6 +1474,7 @@ window.addEventListener('DOMContentLoaded', () => {
   if (saved) {
     try {
       S.worker = JSON.parse(saved);
+      S.operation = S.worker.assigned_operation || OPERATIONS[0];
       S.t0   = Date.now();
       S.tick = setInterval(tickSession, 1000);
       goToStep2();
