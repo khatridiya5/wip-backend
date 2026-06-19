@@ -980,20 +980,19 @@ function parseQR(raw) {
   raw = raw.trim();
   if (raw.startsWith('WK-')) return { type: 'unknown', qr: raw, label: raw };
 
-  // Pipes always get the full modal (qty + operation + product/job + notes),
-  // regardless of prefix.
-  const isPipe = /pipe/i.test(raw);
-  if (isPipe) {
-    return { type: 'pipe', qr: raw, itemId: raw, batchId: '', label: raw, unit: 'pcs' };
+  if (raw.startsWith('PIPE-')) {
+    return { type: 'pipe', qr: raw, itemId: raw, batchId: '', label: raw, unit: 'pipe(s)' };
   }
 
-  // Non-pipe batch items (e.g. nuts, bolts) still get the modal for quantity entry.
   if (raw.startsWith('BULK-')) {
     return { type: 'bulk', qr: raw, itemId: raw, batchId: '', label: raw, unit: 'pcs' };
   }
 
-  // Everything else gets assigned directly, no modal.
-  return { type: 'unit', qr: raw, label: raw, serial: raw };
+  if (raw.startsWith('UNIT-')) {
+    return { type: 'unit', qr: raw, label: raw, serial: raw };
+  }
+
+  return { type: 'unknown', qr: raw, label: raw };
 }
 
 
@@ -1273,7 +1272,7 @@ function renderParts() {
 
 let pendingBulk = null;
 
-function openBulkModal(parsed) {
+async function openBulkModal(parsed) {
   pendingBulk = parsed;
   const isPipe = parsed.type === 'pipe';
 
@@ -1289,9 +1288,26 @@ function openBulkModal(parsed) {
   $('bulk-frac-row').style.display = isPipe ? 'flex' : 'none';
   $('bulk-qty-label').textContent = isPipe ? 'How much was used?' : 'How much are you taking?';
   $('bulk-qty-unit').textContent = isPipe ? 'pipe(s)' : 'unit(s)';
-  $('bulk-qty-hint').textContent = isPipe
-    ? 'Tap a quick fraction above, or type an exact value (e.g. 2.5 for 2½ pipes)'
-    : 'This quantity will be deducted from store stock';
+
+  if (isPipe) {
+    $('bulk-qty-hint').textContent = 'Checking remaining stock…';
+    try {
+      const res = await fetch(`${BACKEND}/production/wip/pipe-status?qr=${encodeURIComponent(parsed.qr)}`);
+      const data = await res.json();
+      if (res.ok) {
+        pendingBulk.remaining = data.remaining_quantity;
+        $('bulk-qty-hint').innerHTML = `<b style="color:var(--cyan)">${data.remaining_quantity} remaining</b> on this pipe — enter how much you're using now`;
+      } else {
+        pendingBulk.remaining = null;
+        $('bulk-qty-hint').textContent = data.detail || 'Could not check pipe status';
+      }
+    } catch (e) {
+      pendingBulk.remaining = null;
+      $('bulk-qty-hint').textContent = 'Could not reach server to check remaining stock';
+    }
+  } else {
+    $('bulk-qty-hint').textContent = 'This quantity will be deducted from store stock';
+  }
 
   $('bulk-overlay').style.display = 'flex';
   setTimeout(() => $('bulk-qty-inp').focus(), 300);
@@ -1347,6 +1363,10 @@ function confirmBulk() {
   if (qty <= 0) { toast('Enter a quantity greater than 0', 'err'); return; }
 
   const p = pendingBulk;
+  if (p.type === 'pipe' && typeof p.remaining === 'number' && qty > p.remaining) {
+    toast(`<i class="ti ti-alert-triangle"></i> Only ${p.remaining} left on this pipe — cannot use ${qty}`, 'err');
+    return;
+  }
   const isPipe = p.type === 'pipe';
 
   const operation = isPipe ? $('bulk-operation-select').value : null;
@@ -1364,11 +1384,11 @@ if (existing) {
   if (notes) existing.notes = existing.notes ? existing.notes + ' | ' + notes : notes;
 
   const remaining = Math.max(0, 1 - existing.qty);
-  toast('<i class="ti ti-plus"></i> +' + qty + ' used — ' + remaining + ' left', 'ok');
+  toast('<i class="ti ti-plus"></i> +' + qty + ' · total now ' + existing.qty + ' ' + (p.unit||''), 'ok');
 } else {
   S.parts.push({ ...p, qty, time: TS(), operation, product, productLabel, notes });
   const remaining = Math.max(0, 1 - qty);
-  toast('<i class="ti ti-check"></i> ' + p.label + ' added — ' + remaining + ' left', 'ok');
+  toast('<i class="ti ti-check"></i> ' + p.label + ' · ' + qty + ' ' + (p.unit||'') + ' recorded', 'ok');
 }
   closeBulkModal();
   renderParts();
@@ -1402,6 +1422,7 @@ async function submitSession() {
       if (!res.ok) {
         const e = await res.json().catch(()=>({detail:'Server error'}));
         toast(`<i class="ti ti-alert-triangle"></i> ${part.label}: ${e.detail}`, 'err');
+        alert(`Could not record ${part.label}:\n\n${e.detail}`);
         $('submit-btn').disabled = false;
         $('submit-btn').innerHTML = '<i class="ti ti-circle-check"></i> Submit session';
         return;
