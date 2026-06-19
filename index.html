@@ -1354,17 +1354,22 @@ function confirmBulk() {
   const productLabel = product;
   const notes = isPipe ? $('bulk-notes-inp').value.trim() : '';
 
-  const existing = S.parts.find(x => x.qr === p.qr && x.product === product && x.operation === operation);
+const existing = S.parts.find(x => x.qr === p.qr);
 
-  if (existing) {
-    existing.qty += qty;
-    existing.time = TS();
-    if (notes) existing.notes = existing.notes ? existing.notes + ' | ' + notes : notes;
-    toast('<i class="ti ti-plus"></i> +' + qty + ' added — total ' + existing.qty, 'ok');
-  } else {
-    S.parts.push({ ...p, qty, time: TS(), operation, product, productLabel, notes });
-    toast('<i class="ti ti-check"></i> ' + p.label + ' added', 'ok');
-  }
+if (existing) {
+  existing.qty += qty;
+  existing.time = TS();
+  if (operation) existing.operation = operation;
+  if (product) { existing.product = product; existing.productLabel = product; }
+  if (notes) existing.notes = existing.notes ? existing.notes + ' | ' + notes : notes;
+
+  const remaining = Math.max(0, 1 - existing.qty);
+  toast('<i class="ti ti-plus"></i> +' + qty + ' used — ' + remaining + ' left', 'ok');
+} else {
+  S.parts.push({ ...p, qty, time: TS(), operation, product, productLabel, notes });
+  const remaining = Math.max(0, 1 - qty);
+  toast('<i class="ti ti-check"></i> ' + p.label + ' added — ' + remaining + ' left', 'ok');
+}
   closeBulkModal();
   renderParts();
   closePanel();
